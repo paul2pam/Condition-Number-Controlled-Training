@@ -1,0 +1,17 @@
+defaults:
+  - base_agent
+  - _self_
+
+# CrossQ + Weight Norm
+name: CrossQ+WN
+use_weight_norm: 1
+normalize_last_layer: 0
+use_batch_norm: 1
+critic_loss: mse
+pre_activation_bn: 0
+weight_decay: 0.01
+decay_bn: 1
+reward_normalization: false
+
+hidden_dims_critic: [512, 512]
+hidden_dims_actor: [256, 256]

@@ -1,0 +1,44 @@
+[project]
+name = "xqc"
+version = "0.1.0"
+description = "XQC: Well-conditioned Optimization Accelerates Deep Reinforcement Learning"
+readme = "README.md"
+requires-python = "==3.9.*"
+dependencies = [
+    "dm-control==1.0.20",
+    "dotmap==1.3.30",
+    "Cython==0.29.37",
+    "flax==0.8.4",
+    "gymnasium @ git+https://github.com/Farama-Foundation/Gymnasium.git@d92e030e9a0b03806deda51122c705169313f158",
+    "hydra-core==1.3.2",
+    "imageio==2.34.2",
+    "jax[cuda12]==0.4.30",
+    "jaxlib[cuda12]==0.4.30",
+    "jaxopt==0.8.3",
+    "matplotlib==3.9.0",
+    "mujoco==3.1.6",
+    "mujoco-py==2.1.2.14",
+    "numpy==1.24.1",
+    "omegaconf==2.3.0",
+    "optax==0.2.3",
+    "pandas==2.1.4",
+    "setuptools==80.9.0",
+    "Shimmy==2.0.0",
+    "tensorflow-probability==0.24.0",
+    "termcolor==2.4.0",
+    "torch==2.8.0",
+    "tqdm==4.66.1",
+    "wandb==0.16.6",
+    "wheel==0.45.1",
+    "moviepy==1.0.3",
+    "humanoid_bench",
+    "MyoSuite",
+]
+
+[tool.uv.sources]
+humanoid_bench = { path = "./humanoid-bench", editable = true }
+MyoSuite = { path = "./myosuite", editable = true }
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

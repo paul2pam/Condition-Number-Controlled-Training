@@ -1,0 +1,16 @@
+defaults:
+  - base_agent
+  - _self_
+
+# Standard CrossQ defaults
+name: CrossQ
+use_weight_norm: 0
+use_batch_norm: 1
+critic_loss: mse
+pre_activation_bn: 0
+decay_bn: 0
+weight_decay: 0.0
+reward_normalization: false
+
+hidden_dims_critic: [512, 512]
+hidden_dims_actor: [256, 256]

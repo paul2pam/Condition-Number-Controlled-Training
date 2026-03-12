@@ -1,0 +1,38 @@
+defaults:
+  - _self_
+  - agent: xqc
+  - env: h1-walk-v0  # Default benchmark/env
+
+# Top-level params (training, logging)
+seed: 0
+num_seeds: 10
+start_training: 5_000
+max_steps: 1_000_000
+replay_buffer_size: 1_000_000
+
+batch_size: 256
+updates_per_step: 2
+n_steps: 1
+log_interval: 10_000
+log_interval_condition_number:
+eval_interval: 50_000
+eval_episodes: 10
+eval_video: false
+eval_video_fps: 30
+eval_video_frameskip: 1
+eval_video_num_envs: 1
+eval_bias: 0
+
+wandb:
+  project_name: XQC
+  entity: null
+  mode: disabled
+
+hydra:
+  job:
+    env_set:
+      XLA_PYTHON_CLIENT_PREALLOCATE: "false"
+      MUJOCO_GL: "egl"
+      MUJOCO_EGL_DEVICE_ID: "0"
+      MKL_SERVICE_FORCE_INTEL: "0"
+      WANDB_DIR: "/tmp"

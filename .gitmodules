@@ -1,0 +1,6 @@
+[submodule "humanoid-bench"]
+	path = humanoid-bench
+	url = https://github.com/joonleesky/humanoid-bench
+[submodule "myosuite"]
+	path = myosuite
+	url = https://github.com/joonleesky/myosuite
