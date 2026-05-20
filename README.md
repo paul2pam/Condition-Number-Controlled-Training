@@ -4,7 +4,7 @@ Official implementation of
 
 **XQC: Well-conditioned Optimization Accelerates Deep Reinforcement Learning**\
 [Daniel Palenicek](https://danielpalenicek.github.io/), 
-Florian Vogt, 
+[Florian Vogt](https://fvgt.github.io/), 
 [Joe Watson](https://joemwatson.github.io/), 
 [Ingmar Posner](https://eng.ox.ac.uk/people/ingmar-posner) and 
 [Jan Peters](https://www.ias.informatik.tu-darmstadt.de/Team/JanPeters)\
