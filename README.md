@@ -1,71 +1,57 @@
-<h1><img src="assets/xqc_logo.svg" alt="XQC" height="94"></h1>
+# XQC — Online Condition-Number Research
 
-Official implementation of 
+Built on the [XQC implementation](https://github.com/danielpalenicek/xqc) (Palenicek et al., ICLR 2026).
 
-**XQC: Well-conditioned Optimization Accelerates Deep Reinforcement Learning**\
-[Daniel Palenicek](https://danielpalenicek.github.io/), 
-[Florian Vogt](https://fvgt.github.io/), 
-[Joe Watson](https://joemwatson.github.io/), 
-[Ingmar Posner](https://eng.ox.ac.uk/people/ingmar-posner) and 
-[Jan Peters](https://www.ias.informatik.tu-darmstadt.de/Team/JanPeters)\
-International Conference on Learning Representations (ICLR) 2026\
-[[Paper]](https://arxiv.org/abs/2509.25174) [[Website]](https://danielpalenicek.github.io/projects/xqc)
+## Background
 
-> **TL;DR:** We introduce XQC; A well-conditioned critic architecture that achieves state-of-the-art sample efficiency on 70 continuous control tasks with 4.5× fewer parameters than SimbaV2.
+XQC is a JAX/Flax actor-critic built on Soft Actor-Critic (SAC). Its central claim is that the *conditioning* of the critic's optimization landscape drives sample efficiency. Conditioning is quantified by the condition number κ = |λ_max| / |λ_min| of the critic's loss Hessian.
 
-<img src="assets/hero.png" alt="XQC Overview" style="border-radius: 8px;" />
+The paper shows that combining three architectural components produces κ orders of magnitude smaller than baselines:
 
-## Abstract
-Sample efficiency is a central property of effective deep reinforcement learning algorithms. Recent work has improved this through added complexity, such as larger models, exotic network architectures, and more complex algorithms, which are typically motivated purely by empirical performance. We take a more principled approach by focusing on the optimization landscape of the critic network. Using the eigenspectrum and condition number of the critic's Hessian, we systematically investigate the impact of common architectural design decisions on training dynamics. Our analysis reveals that a novel combination of batch normalization (BN), weight normalization (WN), and a distributional cross-entropy (CE) loss produces condition numbers orders of magnitude smaller than baselines. This combination also naturally bounds gradient norms, a property critical for maintaining a stable effective learning rate under non-stationary targets and bootstrapping. Based on these insights, we introduce XQC: a well-motivated, sample-efficient deep actor-critic algorithm built upon soft actor-critic that embodies these optimization-aware principles. We achieve state-of-the-art sample efficiency across 55 proprioception and 15 vision-based continuous control tasks, all while using significantly fewer parameters than competing methods.
+| Component | Flag | XQC default |
+|---|---|---|
+| Batch normalization (pre-activation) | `agent.use_batch_norm` / `agent.pre_activation_bn` | `1` / `1` |
+| Weight normalization (weights projected to unit sphere each step) | `agent.use_weight_norm` | `1` |
+| Distributional cross-entropy (CE) loss (C51-style, 101 bins) | `agent.critic_loss` | `categorical` |
+
+The paper measures κ **offline** — full Hessian eigenspectrum via Lanczos on saved checkpoints. This repo closes that loop by computing κ **online during training** as a cheap signal, eventually to steer hyperparameters. Phase 1 (this repo) is measurement only.
+
+## What we're testing
+
+The core question: does a cheap online κ estimator (power iteration, 2–3 HVPs, one fixed minibatch) reproduce the paper's offline finding?
+
+**Expected result:** XQC (BN + WN + CE) → low, stable κ. SAC (all three off) → high, volatile κ.
+
+To test this cleanly, we confirmed that XQC reduces to plain SAC via config flags alone — no new code needed. The three components are each individually toggleable, and four additional flags align the remaining hyperparameters with canonical SAC defaults.
 
 ## Setup
 
-### 1. Clone the Repository recursively to include the necessary submodules
+### 1. Clone
+
 ```bash
-git clone --recurse-submodules https://github.com/danielpalenicek/xqc.git
+git clone --recurse-submodules <your-repo-url>
 cd xqc
 ```
 
-### 2. Environment Setup
+### 2. Install dependencies
 
-Using `uv` to sync the dependencies:
 ```bash
 uv sync
-# To run commands:
-uv run python train_parallel.py ...
 ```
 
+All commands below use `uv run python train_parallel.py ...`.
 
+## Running experiments
 
-# Usage
+### XQC (full)
 
-The main entry point for training is `train_parallel.py`.
-
-#### Basic Example
-Train XQC on the `h1-walk-v0` environment:
 ```bash
-uv run python train_parallel.py env=h1-walk-v0 seed=1
+uv run python train_parallel.py env=<env> seed=0
 ```
-
-#### Key Arguments
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `env` | `h1-walk-v0` | Name of the environment to train on from available Benchmark suites (`dmc`, `mujoco`, `myo`, `hb`). |
-| `seed` | `0` | Random seed for reproducibility. |
-| `max_steps` | `1_000_000` | Total training steps. |
-| `num_seeds` | `10` | Number of parallel seeds to run simultaneously (JAX vmap). |
-| `wandb.mode` | `disabled` | Set to `online` to log results to Weights & Biases. |
-
-## Reproducing Baselines and Ablations
-
-XQC adds three components on top of SAC: batch normalization (BN), weight normalization (WN), and a distributional cross-entropy (CE) loss. Each is independently toggleable via config flags, so you can reproduce the paper's baselines or recover plain SAC without modifying any code.
 
 ### Built-in baselines
 
 ```bash
-# XQC (BN + WN + CE loss)
-uv run python train_parallel.py agent=xqc env=<env> seed=0
-
 # CrossQ (BN post-activation, MSE loss, no WN)
 uv run python train_parallel.py agent=crossq env=<env> seed=0
 
@@ -73,24 +59,9 @@ uv run python train_parallel.py agent=crossq env=<env> seed=0
 uv run python train_parallel.py agent=crossq_wn env=<env> seed=0
 ```
 
-### Ablating individual XQC components
+### Recovering SAC via ablation
 
-| Component | Flag | XQC default | Disabled value |
-|---|---|---|---|
-| Batch normalization | `agent.use_batch_norm` | `1` | `0` |
-| BN placement (pre vs post activation) | `agent.pre_activation_bn` | `1` | `0` |
-| Weight normalization | `agent.use_weight_norm` | `1` | `0` |
-| Distributional CE loss | `agent.critic_loss` | `categorical` | `mse` |
-| Reward normalization | `agent.reward_normalization` | `true` | `false` |
-
-Example — disable only the CE loss, keep BN and WN:
-```bash
-uv run python train_parallel.py agent=xqc agent.critic_loss=mse env=<env> seed=0
-```
-
-### Recovering SAC
-
-Set all three XQC components to off, plus a few additional flags that differ from standard SAC defaults:
+All three XQC components off, plus flags to align remaining hyperparameters with canonical SAC:
 
 ```bash
 uv run python train_parallel.py \
@@ -106,52 +77,71 @@ uv run python train_parallel.py \
   env=<env> seed=0
 ```
 
-| Extra flag | Reason |
+| Extra flag | Why |
 |---|---|
 | `agent.policy_delay=1` | XQC default is 3 (delayed actor updates); SAC updates every step |
 | `agent.lr_end=3e-4` | Matches `actor_lr` to flatten the built-in linear LR decay schedule |
 | `agent.hidden_dims_*=[256,256]` | XQC default is 4 layers × 512/256; canonical SAC uses 2 layers × 256 |
 
-## Online Condition-Number (κ) Logging
+### Single-component ablations
 
-XQC's thesis is that a well-conditioned critic (low κ = |λ_max| / |λ_min| of the loss Hessian) drives sample efficiency. The codebase includes a lightweight online estimator that logs κ, λ_max, and λ_min to wandb every K environment steps using power iteration (2–3 HVPs per step, one fixed minibatch). This is separate from the expensive offline Lanczos analysis (`log_interval_condition_number`) and adds negligible overhead.
+```bash
+# No CE loss (keep BN + WN, switch to MSE)
+uv run python train_parallel.py agent=xqc agent.critic_loss=mse env=<env> seed=0
 
-κ logging is off by default so existing configs are unaffected. Enable it with `kappa_logging.enabled=true`.
+# No weight normalization
+uv run python train_parallel.py agent=xqc agent.use_weight_norm=0 env=<env> seed=0
+
+# No batch normalization
+uv run python train_parallel.py agent=xqc agent.use_batch_norm=0 env=<env> seed=0
+```
+
+### Key training arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `env` | `h1-walk-v0` | Environment name (`dmc`, `mujoco`, `myo`, `hb` suites) |
+| `seed` | `0` | Random seed |
+| `max_steps` | `1_000_000` | Total training steps |
+| `num_seeds` | `10` | Parallel seeds (JAX vmap) |
+| `wandb.mode` | `disabled` | Set to `online` to log to Weights & Biases |
+
+## Online κ logging
+
+κ logging is off by default. Enable with `kappa_logging.enabled=true`. It logs κ, λ_max, and λ_min to wandb every K env steps using power iteration (2–3 HVPs per call on a fixed minibatch). Overhead is negligible.
 
 ### Config flags
 
 | Flag | Default | Description |
 |---|---|---|
 | `kappa_logging.enabled` | `false` | Enable online κ logging |
-| `kappa_logging.interval` | `1000` | Log κ every this many env steps |
+| `kappa_logging.interval` | `1000` | Log every this many env steps |
 | `kappa_logging.n_iters_max` | `3` | Power-iteration steps for λ_max |
-| `kappa_logging.n_iters_min` | `5` | Spectral-shift steps for λ_min (the finicky one) |
+| `kappa_logging.n_iters_min` | `5` | Spectral-shift steps for λ_min |
 
-### Wandb metrics
-
-Each seed logs three series: `seed{i}/kappa/kappa`, `seed{i}/kappa/lambda_max`, `seed{i}/kappa/lambda_min`. Plot on log-scale y-axes.
+Wandb series: `seed{i}/kappa/kappa`, `seed{i}/kappa/lambda_max`, `seed{i}/kappa/lambda_min`. Use log-scale y-axes.
 
 ### Test 1 — verify logging doesn't affect training
 
-Run the same seed twice and confirm the reward traces are identical. κ computation is purely functional (JAX `jvp`/`grad`, no agent state mutation), so they must match exactly.
+κ computation is purely functional (JAX `jvp`/`grad`, no agent state mutation). Confirm by running the same seed with logging on and off and checking that the reward traces are numerically identical.
 
 ```bash
-# Reference run (logging off)
+# Reference
 uv run python train_parallel.py \
   env=dog-trot seed=0 max_steps=10000 num_seeds=1 \
   kappa_logging.enabled=false
 
-# Logging-on run
+# With logging
 uv run python train_parallel.py \
   env=dog-trot seed=0 max_steps=10000 num_seeds=1 \
   kappa_logging.enabled=true kappa_logging.interval=1000
 ```
 
-Compare `seed0/r` in wandb (or stdout) — the two runs must be numerically identical. Any divergence means something is leaking into the gradient path and the κ numbers cannot be trusted.
+`seed0/r` must be numerically identical across both runs. Any divergence means something is leaking into the gradient path.
 
-### Test 2 — validate the κ contrast (XQC vs SAC)
+### Test 2 — κ contrast (XQC vs SAC)
 
-The canonical validation is `dog-trot` from DMC. Expected result: XQC produces low, stable κ; the SAC ablation produces high, volatile κ — reproducing the paper's offline finding with the cheaper online estimator.
+Canonical validation environment: `dog-trot` (DMC).
 
 ```bash
 # XQC — expect low, stable κ
@@ -175,54 +165,26 @@ uv run python train_parallel.py \
   wandb.mode=online
 ```
 
-Use `num_seeds=1` for a quick first pass; increase to `num_seeds=10` for the final figure (κ is computed independently per seed).
+Start with `num_seeds=1` for a quick check; use `num_seeds=10` for the final figure.
 
-### Running component ablations with κ logging
-
-You can log κ for any intermediate ablation by combining flags:
+### Test 3 — single-component ablations with κ
 
 ```bash
-# XQC minus CE loss only (keep BN + WN, switch to MSE)
+# XQC minus CE loss only
 uv run python train_parallel.py \
   agent=xqc env=dog-trot seed=0 \
   agent.critic_loss=mse \
-  kappa_logging.enabled=true kappa_logging.interval=1000 \
-  wandb.mode=online
+  kappa_logging.enabled=true kappa_logging.interval=1000 wandb.mode=online
 
 # XQC minus WN only
 uv run python train_parallel.py \
   agent=xqc env=dog-trot seed=0 \
   agent.use_weight_norm=0 \
-  kappa_logging.enabled=true kappa_logging.interval=1000 \
-  wandb.mode=online
+  kappa_logging.enabled=true kappa_logging.interval=1000 wandb.mode=online
 
 # XQC minus BN only
 uv run python train_parallel.py \
   agent=xqc env=dog-trot seed=0 \
   agent.use_batch_norm=0 \
-  kappa_logging.enabled=true kappa_logging.interval=1000 \
-  wandb.mode=online
-```
-
-## Acknowledgments
-This codebase builds upon and adapts code from several open-source repositories. We thank the authors for their contributions:
-- [jaxrl](https://github.com/ikostrikov/jaxrl) which served as the original foundation for this codebase.
-- [SimbaV2](https://github.com/dojeon-ai/SimbaV2) for metrics computation tools.
-- [BiggerRegularizedCategorical](https://github.com/naumix/BiggerRegularizedCategorical) for parallel environment wrappers.
-- [deep-rl-plasticity](https://github.com/awjuliani/deep-rl-plasticity) for network dormancy and plasticity metric tracking.
-- [spectral-density](https://github.com/google/spectral-density) for our Hessian eigenspectrum analyses.
-
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Citation
-If you find this code useful for your research, please cite our paper:
-
-```bibtex
-@inproceedings{palenicek2026xqc,
-  title={XQC: Well-Conditioned Optimization Accelerates Deep Reinforcement Learning},
-  author={Palenicek, Daniel and Vogt, Florian and Watson, Joe and Posner, Ingmar and Peters, Jan},
-  booktitle={International Conference on Learning Representations (ICLR)},
-  year={2026}
-}
+  kappa_logging.enabled=true kappa_logging.interval=1000 wandb.mode=online
 ```
