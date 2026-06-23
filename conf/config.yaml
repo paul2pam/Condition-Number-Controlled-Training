@@ -28,6 +28,12 @@ wandb:
   entity: null
   mode: disabled
 
+kappa_logging:
+  enabled: false
+  interval: 1000      # compute κ every this many env steps
+  n_iters_max: 3      # power-iteration steps for λ_max
+  n_iters_min: 5      # spectral-shift steps for λ_min
+
 hydra:
   job:
     env_set:

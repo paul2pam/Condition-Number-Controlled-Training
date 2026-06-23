@@ -91,7 +91,8 @@ def main(cfg: DictConfig):
 
             start_step = 1
             update_count = 0
-            
+            kappa_fixed_batch = None
+
             observations = env.reset()
             infos = {}
 
@@ -156,6 +157,23 @@ def main(cfg: DictConfig):
                         i * cfg.env.action_repeat,
                         xqc.logging.metrics.compute_logging_metrics(agent, infos)
                     )
+
+                # Online κ logging (cheap: power iteration, fixed batch)
+                if cfg.kappa_logging.enabled and i > cfg.start_training:
+                    kappa_interval = max(1, cfg.kappa_logging.interval // cfg.env.action_repeat)
+                    if i % kappa_interval == 0:
+                        if kappa_fixed_batch is None:
+                            kappa_fixed_batch = replay_buffer.sample_parallel_multibatch(cfg.batch_size, 1)
+                        kappa_metrics = xqc.logging.metrics.compute_kappa_metrics(
+                            agent,
+                            kappa_fixed_batch,
+                            cfg.num_seeds,
+                            n_iters_max=cfg.kappa_logging.n_iters_max,
+                            n_iters_min=cfg.kappa_logging.n_iters_min,
+                        )
+                        xqc.logging.log_multiple_seeds_to_wandb(
+                            i * cfg.env.action_repeat, kappa_metrics
+                        )
 
                 # Condition number logging (expensive)
                 if cfg.log_interval_condition_number and \
