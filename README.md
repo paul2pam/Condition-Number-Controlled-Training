@@ -29,8 +29,8 @@ To test this cleanly, we confirmed that XQC reduces to plain SAC via config flag
 ### 1. Clone
 
 ```bash
-git clone --recurse-submodules <your-repo-url>
-cd xqc
+git clone --recurse-submodules https://github.com/paul2pam/Condition-Number-Controlled-Training.git
+cd Condition-Number-Controlled-Training
 ```
 
 ### 2. Install dependencies
@@ -46,17 +46,17 @@ All commands below use `uv run python train_parallel.py ...`.
 ### XQC (full)
 
 ```bash
-uv run python train_parallel.py env=<env> seed=0
+uv run python train_parallel.py env=dog-trot seed=0
 ```
 
 ### Built-in baselines
 
 ```bash
 # CrossQ (BN post-activation, MSE loss, no WN)
-uv run python train_parallel.py agent=crossq env=<env> seed=0
+uv run python train_parallel.py agent=crossq env=dog-trot seed=0
 
 # CrossQ + Weight Normalization
-uv run python train_parallel.py agent=crossq_wn env=<env> seed=0
+uv run python train_parallel.py agent=crossq_wn env=dog-trot seed=0
 ```
 
 ### Recovering SAC via ablation
@@ -74,7 +74,7 @@ uv run python train_parallel.py \
   agent.lr_end=3e-4 \
   agent.hidden_dims_critic=[256,256] \
   agent.hidden_dims_actor=[256,256] \
-  env=<env> seed=0
+  env=dog-trot seed=0
 ```
 
 | Extra flag | Why |
@@ -87,13 +87,13 @@ uv run python train_parallel.py \
 
 ```bash
 # No CE loss (keep BN + WN, switch to MSE)
-uv run python train_parallel.py agent=xqc agent.critic_loss=mse env=<env> seed=0
+uv run python train_parallel.py agent=xqc agent.critic_loss=mse env=dog-trot seed=0
 
 # No weight normalization
-uv run python train_parallel.py agent=xqc agent.use_weight_norm=0 env=<env> seed=0
+uv run python train_parallel.py agent=xqc agent.use_weight_norm=0 env=dog-trot seed=0
 
 # No batch normalization
-uv run python train_parallel.py agent=xqc agent.use_batch_norm=0 env=<env> seed=0
+uv run python train_parallel.py agent=xqc agent.use_batch_norm=0 env=dog-trot seed=0
 ```
 
 ### Key training arguments
