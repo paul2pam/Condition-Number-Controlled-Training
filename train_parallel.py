@@ -92,6 +92,7 @@ def main(cfg: DictConfig):
             start_step = 1
             update_count = 0
             kappa_fixed_batch = None
+            current_utd = cfg.updates_per_step
 
             observations = env.reset()
             infos = {}
@@ -122,14 +123,14 @@ def main(cfg: DictConfig):
 
                 # Update agent
                 if i > cfg.start_training:
-                    batches = replay_buffer.sample_parallel_multibatch(cfg.batch_size, cfg.updates_per_step)
+                    batches = replay_buffer.sample_parallel_multibatch(cfg.batch_size, current_utd)
 
                     if cfg.agent.reward_normalization:
                         normalized_rewards = reward_normalizer.normalize(batches.rewards)
                         batches = batches._replace(rewards=normalized_rewards)
 
-                    infos = agent.update(batches, num_updates=cfg.updates_per_step)
-                    update_count += cfg.updates_per_step
+                    infos = agent.update(batches, num_updates=current_utd)
+                    update_count += current_utd
 
                 ################################################################################
                 # Evaluation and Logging
@@ -174,6 +175,19 @@ def main(cfg: DictConfig):
                         xqc.logging.log_multiple_seeds_to_wandb(
                             i * cfg.env.action_repeat, kappa_metrics
                         )
+
+                        if cfg.kappa_control.enabled:
+                            mean_kappa = float(np.mean(np.array(kappa_metrics["kappa/kappa"])))
+                            if mean_kappa > cfg.kappa_control.kappa_high:
+                                current_utd = max(cfg.kappa_control.utd_min,
+                                                  current_utd - cfg.kappa_control.utd_step)
+                            elif mean_kappa < cfg.kappa_control.kappa_low:
+                                current_utd = min(cfg.kappa_control.utd_max,
+                                                  current_utd + cfg.kappa_control.utd_step)
+                            xqc.logging.log_multiple_seeds_to_wandb(
+                                i * cfg.env.action_repeat,
+                                {"utd_ratio": np.array([current_utd] * cfg.num_seeds)},
+                            )
 
                 # Condition number logging (expensive)
                 if cfg.log_interval_condition_number and \

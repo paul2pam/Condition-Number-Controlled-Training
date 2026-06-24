@@ -6,7 +6,7 @@ Built on [XQC](https://github.com/danielpalenicek/xqc) (Palenicek et al., ICLR 2
 
 XQC is a JAX/Flax actor-critic that argues the condition number κ = |λ_max| / |λ_min| of the critic's loss Hessian drives sample efficiency. Three components together produce κ orders of magnitude smaller than SAC: batch normalization (BN), weight normalization (WN), and a distributional cross-entropy (CE) loss.
 
-The paper measures κ offline via full Lanczos on saved checkpoints. This repo adds a cheap **online** κ estimator (power iteration, 2–3 HVPs per call, one fixed minibatch) and asks: does it reproduce the offline finding? Phase 1 is measurement only — no hyperparameter control yet.
+The paper measures κ offline via full Lanczos on saved checkpoints. This repo adds a cheap **online** κ estimator (power iteration, 2–3 HVPs per call, one fixed minibatch) and uses it to adaptively control the UTD (updates-to-data) ratio: reduce UTD when κ is high (ill-conditioned, risky to over-update), increase it when κ is low (well-conditioned, safe to extract more value per step).
 
 ## Setup
 
@@ -58,6 +58,39 @@ uv run python train_parallel.py \
 
 Start with `num_seeds=1` for a quick check; scale to `num_seeds=10` for the final figure.
 
+### Experiment 3 — κ-controlled UTD on XQC
+
+**Do this after Experiment 2.** Look at the `seed0/kappa/kappa` range for XQC on dog-trot, then set `kappa_low` just above it and `kappa_high` well above SAC's range. Expected result: UTD stays near the starting value (XQC's κ is low and stable, so control rarely fires).
+
+```bash
+uv run python train_parallel.py \
+  agent=xqc env=dog-trot seed=0 num_seeds=1 \
+  kappa_logging.enabled=true kappa_logging.interval=1000 \
+  kappa_control.enabled=true \
+  kappa_control.kappa_high=<from Exp 2> \
+  kappa_control.kappa_low=<from Exp 2> \
+  wandb.mode=online
+```
+
+Watch `seed0/utd_ratio` alongside `seed0/kappa/kappa`.
+
+### Experiment 4 — κ-controlled UTD on SAC
+
+Same thresholds as Experiment 3. Expected result: UTD drops when SAC's κ spikes above `kappa_high`, then stays low or oscillates.
+
+```bash
+uv run python train_parallel.py \
+  agent=xqc env=dog-trot seed=0 num_seeds=1 \
+  agent.use_batch_norm=0 agent.use_weight_norm=0 agent.critic_loss=mse \
+  agent.reward_normalization=false agent.policy_delay=1 agent.lr_end=3e-4 \
+  agent.hidden_dims_critic=[256,256] agent.hidden_dims_actor=[256,256] \
+  kappa_logging.enabled=true kappa_logging.interval=1000 \
+  kappa_control.enabled=true \
+  kappa_control.kappa_high=<from Exp 2> \
+  kappa_control.kappa_low=<from Exp 2> \
+  wandb.mode=online
+```
+
 ## Reference
 
 ### κ logging flags
@@ -89,6 +122,19 @@ The SAC command above sets these on top of `agent=xqc`:
 uv run python train_parallel.py agent=crossq env=dog-trot seed=0
 uv run python train_parallel.py agent=crossq_wn env=dog-trot seed=0
 ```
+
+### κ control flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `kappa_control.enabled` | `false` | Enable UTD adjustment. Requires `kappa_logging.enabled=true` |
+| `kappa_control.kappa_high` | `1000.0` | **PLACEHOLDER** — κ above this reduces UTD. Set from Experiment 2 |
+| `kappa_control.kappa_low` | `10.0` | **PLACEHOLDER** — κ below this increases UTD. Set from Experiment 2 |
+| `kappa_control.utd_min` | `1` | Floor on UTD ratio |
+| `kappa_control.utd_max` | `8` | Ceiling on UTD ratio |
+| `kappa_control.utd_step` | `1` | How much UTD changes per adjustment |
+
+To verify control is firing before using calibrated thresholds, use `kappa_control.kappa_high=0` — this forces UTD to drop to `utd_min` on the first κ estimate and `seed0/utd_ratio` should show the change in wandb.
 
 ### Single-component ablations with κ
 

@@ -34,6 +34,18 @@ kappa_logging:
   n_iters_max: 3      # power-iteration steps for λ_max
   n_iters_min: 5      # spectral-shift steps for λ_min
 
+kappa_control:
+  enabled: false
+  # PLACEHOLDER thresholds — calibrate from Experiment 2 κ traces before enabling.
+  # Run Experiment 2 first, observe the κ range for XQC and SAC on dog-trot, then set:
+  #   kappa_high  just below where SAC's κ stabilizes  (triggers UTD reduction)
+  #   kappa_low   just above where XQC's κ stabilizes  (triggers UTD increase)
+  kappa_high: 1000.0  # κ above this → reduce UTD by utd_step (ill-conditioned)
+  kappa_low:  10.0    # κ below this → increase UTD by utd_step (well-conditioned)
+  utd_min: 1          # floor on UTD ratio
+  utd_max: 8          # ceiling on UTD ratio
+  utd_step: 1         # increment/decrement per adjustment
+
 hydra:
   job:
     env_set:
