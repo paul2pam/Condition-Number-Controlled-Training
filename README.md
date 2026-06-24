@@ -1,190 +1,104 @@
-# XQC — Online Condition-Number Research
+# Condition-Number-Controlled Training
 
-Built on the [XQC implementation](https://github.com/danielpalenicek/xqc) (Palenicek et al., ICLR 2026).
+Built on [XQC](https://github.com/danielpalenicek/xqc) (Palenicek et al., ICLR 2026).
 
 ## Background
 
-XQC is a JAX/Flax actor-critic built on Soft Actor-Critic (SAC). Its central claim is that the *conditioning* of the critic's optimization landscape drives sample efficiency. Conditioning is quantified by the condition number κ = |λ_max| / |λ_min| of the critic's loss Hessian.
+XQC is a JAX/Flax actor-critic that argues the condition number κ = |λ_max| / |λ_min| of the critic's loss Hessian drives sample efficiency. Three components together produce κ orders of magnitude smaller than SAC: batch normalization (BN), weight normalization (WN), and a distributional cross-entropy (CE) loss.
 
-The paper shows that combining three architectural components produces κ orders of magnitude smaller than baselines:
-
-| Component | Flag | XQC default |
-|---|---|---|
-| Batch normalization (pre-activation) | `agent.use_batch_norm` / `agent.pre_activation_bn` | `1` / `1` |
-| Weight normalization (weights projected to unit sphere each step) | `agent.use_weight_norm` | `1` |
-| Distributional cross-entropy (CE) loss (C51-style, 101 bins) | `agent.critic_loss` | `categorical` |
-
-The paper measures κ **offline** — full Hessian eigenspectrum via Lanczos on saved checkpoints. This repo closes that loop by computing κ **online during training** as a cheap signal, eventually to steer hyperparameters. Phase 1 (this repo) is measurement only.
-
-## What we're testing
-
-The core question: does a cheap online κ estimator (power iteration, 2–3 HVPs, one fixed minibatch) reproduce the paper's offline finding?
-
-**Expected result:** XQC (BN + WN + CE) → low, stable κ. SAC (all three off) → high, volatile κ.
-
-To test this cleanly, we confirmed that XQC reduces to plain SAC via config flags alone — no new code needed. The three components are each individually toggleable, and four additional flags align the remaining hyperparameters with canonical SAC defaults.
+The paper measures κ offline via full Lanczos on saved checkpoints. This repo adds a cheap **online** κ estimator (power iteration, 2–3 HVPs per call, one fixed minibatch) and asks: does it reproduce the offline finding? Phase 1 is measurement only — no hyperparameter control yet.
 
 ## Setup
-
-### 1. Clone
 
 ```bash
 git clone --recurse-submodules https://github.com/paul2pam/Condition-Number-Controlled-Training.git
 cd Condition-Number-Controlled-Training
-```
-
-### 2. Install dependencies
-
-```bash
 uv sync
 ```
 
-All commands below use `uv run python train_parallel.py ...`.
+## Experiments
 
-## Running experiments
+### Experiment 1 — Verify κ logging doesn't affect training
 
-### XQC (full)
-
-```bash
-uv run python train_parallel.py env=dog-trot seed=0
-```
-
-### Built-in baselines
+Run the same seed with logging on and off. The reward traces must be numerically identical — this confirms κ computation is purely observational.
 
 ```bash
-# CrossQ (BN post-activation, MSE loss, no WN)
-uv run python train_parallel.py agent=crossq env=dog-trot seed=0
-
-# CrossQ + Weight Normalization
-uv run python train_parallel.py agent=crossq_wn env=dog-trot seed=0
-```
-
-### Recovering SAC via ablation
-
-All three XQC components off, plus flags to align remaining hyperparameters with canonical SAC:
-
-```bash
+# Reference (logging off)
 uv run python train_parallel.py \
-  agent=xqc \
-  agent.use_batch_norm=0 \
-  agent.use_weight_norm=0 \
-  agent.critic_loss=mse \
-  agent.reward_normalization=false \
-  agent.policy_delay=1 \
-  agent.lr_end=3e-4 \
-  agent.hidden_dims_critic=[256,256] \
-  agent.hidden_dims_actor=[256,256] \
-  env=dog-trot seed=0
-```
+  env=dog-trot seed=0 max_steps=10000 num_seeds=1
 
-| Extra flag | Why |
-|---|---|
-| `agent.policy_delay=1` | XQC default is 3 (delayed actor updates); SAC updates every step |
-| `agent.lr_end=3e-4` | Matches `actor_lr` to flatten the built-in linear LR decay schedule |
-| `agent.hidden_dims_*=[256,256]` | XQC default is 4 layers × 512/256; canonical SAC uses 2 layers × 256 |
-
-### Single-component ablations
-
-```bash
-# No CE loss (keep BN + WN, switch to MSE)
-uv run python train_parallel.py agent=xqc agent.critic_loss=mse env=dog-trot seed=0
-
-# No weight normalization
-uv run python train_parallel.py agent=xqc agent.use_weight_norm=0 env=dog-trot seed=0
-
-# No batch normalization
-uv run python train_parallel.py agent=xqc agent.use_batch_norm=0 env=dog-trot seed=0
-```
-
-### Key training arguments
-
-| Argument | Default | Description |
-|---|---|---|
-| `env` | `h1-walk-v0` | Environment name (`dmc`, `mujoco`, `myo`, `hb` suites) |
-| `seed` | `0` | Random seed |
-| `max_steps` | `1_000_000` | Total training steps |
-| `num_seeds` | `10` | Parallel seeds (JAX vmap) |
-| `wandb.mode` | `disabled` | Set to `online` to log to Weights & Biases |
-
-## Online κ logging
-
-κ logging is off by default. Enable with `kappa_logging.enabled=true`. It logs κ, λ_max, and λ_min to wandb every K env steps using power iteration (2–3 HVPs per call on a fixed minibatch). Overhead is negligible.
-
-### Config flags
-
-| Flag | Default | Description |
-|---|---|---|
-| `kappa_logging.enabled` | `false` | Enable online κ logging |
-| `kappa_logging.interval` | `1000` | Log every this many env steps |
-| `kappa_logging.n_iters_max` | `3` | Power-iteration steps for λ_max |
-| `kappa_logging.n_iters_min` | `5` | Spectral-shift steps for λ_min |
-
-Wandb series: `seed{i}/kappa/kappa`, `seed{i}/kappa/lambda_max`, `seed{i}/kappa/lambda_min`. Use log-scale y-axes.
-
-### Test 1 — verify logging doesn't affect training
-
-κ computation is purely functional (JAX `jvp`/`grad`, no agent state mutation). Confirm by running the same seed with logging on and off and checking that the reward traces are numerically identical.
-
-```bash
-# Reference
-uv run python train_parallel.py \
-  env=dog-trot seed=0 max_steps=10000 num_seeds=1 \
-  kappa_logging.enabled=false
-
-# With logging
+# With κ logging
 uv run python train_parallel.py \
   env=dog-trot seed=0 max_steps=10000 num_seeds=1 \
   kappa_logging.enabled=true kappa_logging.interval=1000
 ```
 
-`seed0/r` must be numerically identical across both runs. Any divergence means something is leaking into the gradient path.
+**Pass criterion:** `seed0/r` is identical across both runs. Any divergence means κ computation is leaking into the gradient path.
 
-### Test 2 — κ contrast (XQC vs SAC)
+### Experiment 2 — κ contrast: XQC vs SAC
 
-Canonical validation environment: `dog-trot` (DMC).
+Expected: XQC produces low, stable κ. SAC produces high, volatile κ. Run both on `dog-trot` and compare `seed0/kappa/kappa` in wandb (log-scale y-axis).
 
 ```bash
-# XQC — expect low, stable κ
+# XQC
 uv run python train_parallel.py \
   agent=xqc env=dog-trot seed=0 num_seeds=1 \
   kappa_logging.enabled=true kappa_logging.interval=1000 \
   wandb.mode=online
 
-# SAC ablation — expect high, volatile κ
+# SAC
 uv run python train_parallel.py \
   agent=xqc env=dog-trot seed=0 num_seeds=1 \
-  agent.use_batch_norm=0 \
-  agent.use_weight_norm=0 \
-  agent.critic_loss=mse \
-  agent.reward_normalization=false \
-  agent.policy_delay=1 \
-  agent.lr_end=3e-4 \
-  agent.hidden_dims_critic=[256,256] \
-  agent.hidden_dims_actor=[256,256] \
+  agent.use_batch_norm=0 agent.use_weight_norm=0 agent.critic_loss=mse \
+  agent.reward_normalization=false agent.policy_delay=1 agent.lr_end=3e-4 \
+  agent.hidden_dims_critic=[256,256] agent.hidden_dims_actor=[256,256] \
   kappa_logging.enabled=true kappa_logging.interval=1000 \
   wandb.mode=online
 ```
 
-Start with `num_seeds=1` for a quick check; use `num_seeds=10` for the final figure.
+Start with `num_seeds=1` for a quick check; scale to `num_seeds=10` for the final figure.
 
-### Test 3 — single-component ablations with κ
+## Reference
+
+### κ logging flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `kappa_logging.enabled` | `false` | Enable online κ logging |
+| `kappa_logging.interval` | `1000` | Steps between κ estimates |
+| `kappa_logging.n_iters_max` | `3` | Power-iteration steps for λ_max |
+| `kappa_logging.n_iters_min` | `5` | Spectral-shift steps for λ_min |
+
+### SAC ablation flags
+
+The SAC command above sets these on top of `agent=xqc`:
+
+| Flag | Value | Why |
+|---|---|---|
+| `agent.use_batch_norm` | `0` | Remove BN |
+| `agent.use_weight_norm` | `0` | Remove WN |
+| `agent.critic_loss` | `mse` | MSE Bellman loss instead of CE |
+| `agent.reward_normalization` | `false` | XQC-specific, not in SAC |
+| `agent.policy_delay` | `1` | SAC updates actor every step; XQC default is 3 |
+| `agent.lr_end` | `3e-4` | Flattens the built-in LR decay schedule |
+| `agent.hidden_dims_*` | `[256,256]` | Canonical SAC width; XQC default is 4×512 |
+
+### Other agents
 
 ```bash
-# XQC minus CE loss only
-uv run python train_parallel.py \
-  agent=xqc env=dog-trot seed=0 \
-  agent.critic_loss=mse \
-  kappa_logging.enabled=true kappa_logging.interval=1000 wandb.mode=online
+uv run python train_parallel.py agent=crossq env=dog-trot seed=0
+uv run python train_parallel.py agent=crossq_wn env=dog-trot seed=0
+```
 
-# XQC minus WN only
-uv run python train_parallel.py \
-  agent=xqc env=dog-trot seed=0 \
-  agent.use_weight_norm=0 \
-  kappa_logging.enabled=true kappa_logging.interval=1000 wandb.mode=online
+### Single-component ablations with κ
 
-# XQC minus BN only
-uv run python train_parallel.py \
-  agent=xqc env=dog-trot seed=0 \
-  agent.use_batch_norm=0 \
-  kappa_logging.enabled=true kappa_logging.interval=1000 wandb.mode=online
+```bash
+uv run python train_parallel.py agent=xqc env=dog-trot seed=0 \
+  agent.critic_loss=mse kappa_logging.enabled=true wandb.mode=online        # no CE
+
+uv run python train_parallel.py agent=xqc env=dog-trot seed=0 \
+  agent.use_weight_norm=0 kappa_logging.enabled=true wandb.mode=online      # no WN
+
+uv run python train_parallel.py agent=xqc env=dog-trot seed=0 \
+  agent.use_batch_norm=0 kappa_logging.enabled=true wandb.mode=online       # no BN
 ```
