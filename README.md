@@ -8,6 +8,8 @@ XQC is a JAX/Flax actor-critic that argues the condition number κ = |λ_max| / 
 
 The paper measures κ offline via full Lanczos on saved checkpoints. This repo adds a cheap **online** κ estimator (power iteration, 2–3 HVPs per call, one fixed minibatch) and uses it to adaptively control the UTD (updates-to-data) ratio: reduce UTD when κ is high (ill-conditioned, risky to over-update), increase it when κ is low (well-conditioned, safe to extract more value per step).
 
+**UTD context:** The default UTD is 2 — standard for SAC-family methods (the original SAC paper used 1). Model-free off-policy methods are bottlenecked by replay buffer diversity, so high UTD risks overfitting to stale data. Model-based methods (Dreamer, MBPO) can use 16–64 because a world model generates cheap synthetic data. CrossQ pushes UTD to 16+ using a special joined batch norm forward pass that stabilizes high-UTD training. The hypothesis here is that low κ directly licenses higher UTD: if the critic's optimization landscape is well-conditioned, more gradient steps per env step are safe. That's what Experiments 3 and 4 test.
+
 ## Setup
 
 ```bash
