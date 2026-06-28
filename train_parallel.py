@@ -177,6 +177,7 @@ def main(cfg: DictConfig):
                             cfg.num_seeds,
                             n_iters_max=cfg.kappa_logging.n_iters_max,
                             n_iters_min=cfg.kappa_logging.n_iters_min,
+                            lambda_min_floor=cfg.kappa_logging.lambda_min_floor,
                         )
                         xqc.logging.log_multiple_seeds_to_wandb(
                             i * cfg.env.action_repeat, kappa_metrics

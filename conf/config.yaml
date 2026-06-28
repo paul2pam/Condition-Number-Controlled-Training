@@ -30,9 +30,11 @@ wandb:
 
 kappa_logging:
   enabled: false
-  interval: 1000      # compute κ every this many env steps
-  n_iters_max: 3      # power-iteration steps for λ_max
-  n_iters_min: 5      # spectral-shift steps for λ_min
+  interval: 1000          # compute κ every this many env steps
+  n_iters_max: 3          # power-iteration steps for λ_max
+  n_iters_min: 5          # spectral-shift steps for λ_min
+  lambda_min_floor: 1e-3  # absolute damping floor on |λ_min| (NN Hessians are indefinite,
+                          # λ_min straddles 0); below it, κ ≈ λ_max/floor and tracks λ_max
 
 kappa_control:
   enabled: false
