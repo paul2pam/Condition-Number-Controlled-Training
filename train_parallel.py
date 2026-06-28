@@ -164,7 +164,13 @@ def main(cfg: DictConfig):
                     kappa_interval = max(1, cfg.kappa_logging.interval // cfg.env.action_repeat)
                     if i % kappa_interval == 0:
                         if kappa_fixed_batch is None:
+                            # Sample the fixed κ batch without disturbing the global
+                            # numpy RNG stream that drives training-batch sampling
+                            # (replay_buffer uses np.random.randint). Snapshot/restore
+                            # so logging-on and logging-off runs stay byte-identical.
+                            _rng_state = np.random.get_state()
                             kappa_fixed_batch = replay_buffer.sample_parallel_multibatch(cfg.batch_size, 1)
+                            np.random.set_state(_rng_state)
                         kappa_metrics = xqc.logging.metrics.compute_kappa_metrics(
                             agent,
                             kappa_fixed_batch,
