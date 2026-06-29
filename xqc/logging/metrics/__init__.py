@@ -1,3 +1,3 @@
 from .hessian_eigenspectrum import compute_hessian_eigenspectrum
-from .kappa import compute_kappa_metrics
+from .kappa import compute_lambda_max_metrics
 from .metrics import compute_logging_metrics

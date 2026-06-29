@@ -28,25 +28,21 @@ wandb:
   entity: null
   mode: disabled
 
-kappa_logging:
+lambda_max_logging:
   enabled: false
-  interval: 1000          # compute κ every this many env steps
-  n_iters_max: 3          # power-iteration steps for λ_max
-  n_iters_min: 5          # spectral-shift steps for λ_min
-  lambda_min_floor: 1e-4  # absolute damping floor on |λ_min| (NN Hessians are indefinite,
-                          # λ_min straddles 0); below it, κ ≈ λ_max/floor and tracks λ_max
+  interval: 1000      # estimate λ_max every this many env steps
+  n_iters_max: 3      # power-iteration steps for λ_max
 
-kappa_control:
+lambda_max_control:
   enabled: false
-  # PLACEHOLDER thresholds — calibrate from Experiment 2 κ traces before enabling.
-  # Run Experiment 2 first, observe the κ range for XQC and SAC on dog-trot, then set:
-  #   kappa_high  just below where SAC's κ stabilizes  (triggers UTD reduction)
-  #   kappa_low   just above where XQC's κ stabilizes  (triggers UTD increase)
-  kappa_high: 1000.0  # κ above this → reduce UTD by utd_step (ill-conditioned)
-  kappa_low:  10.0    # κ below this → increase UTD by utd_step (well-conditioned)
-  utd_min: 1          # floor on UTD ratio
-  utd_max: 8          # ceiling on UTD ratio
-  utd_step: 1         # increment/decrement per adjustment
+  # PLACEHOLDER thresholds — calibrate from experiment runs before enabling.
+  # λ_max is the largest Hessian eigenvalue (direct proxy for gradient step safety).
+  # High λ_max (steep curvature) → reduce UTD. Low λ_max (gentle) → increase UTD.
+  lambda_max_high: 100.0  # λ_max above this → reduce UTD by utd_step (ill-conditioned)
+  lambda_max_low:  1.0    # λ_max below this → increase UTD by utd_step (well-conditioned)
+  utd_min: 1              # floor on UTD ratio
+  utd_max: 16             # ceiling on UTD ratio
+  utd_step: 1             # increment/decrement per adjustment
 
 hydra:
   job:

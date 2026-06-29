@@ -91,7 +91,7 @@ def main(cfg: DictConfig):
 
             start_step = 1
             update_count = 0
-            kappa_fixed_batch = None
+            lambda_max_fixed_batch = None
             current_utd = cfg.updates_per_step
 
             observations = env.reset()
@@ -159,38 +159,36 @@ def main(cfg: DictConfig):
                         xqc.logging.metrics.compute_logging_metrics(agent, infos)
                     )
 
-                # Online κ logging (cheap: power iteration, fixed batch)
-                if cfg.kappa_logging.enabled and i > cfg.start_training:
-                    kappa_interval = max(1, cfg.kappa_logging.interval // cfg.env.action_repeat)
-                    if i % kappa_interval == 0:
-                        if kappa_fixed_batch is None:
-                            # Sample the fixed κ batch without disturbing the global
+                # Online λ_max logging (cheap: power iteration, fixed batch)
+                if cfg.lambda_max_logging.enabled and i > cfg.start_training:
+                    lambda_max_interval = max(1, cfg.lambda_max_logging.interval // cfg.env.action_repeat)
+                    if i % lambda_max_interval == 0:
+                        if lambda_max_fixed_batch is None:
+                            # Sample the fixed λ_max batch without disturbing the global
                             # numpy RNG stream that drives training-batch sampling
                             # (replay_buffer uses np.random.randint). Snapshot/restore
                             # so logging-on and logging-off runs stay byte-identical.
                             _rng_state = np.random.get_state()
-                            kappa_fixed_batch = replay_buffer.sample_parallel_multibatch(cfg.batch_size, 1)
+                            lambda_max_fixed_batch = replay_buffer.sample_parallel_multibatch(cfg.batch_size, 1)
                             np.random.set_state(_rng_state)
-                        kappa_metrics = xqc.logging.metrics.compute_kappa_metrics(
+                        metrics = xqc.logging.metrics.compute_lambda_max_metrics(
                             agent,
-                            kappa_fixed_batch,
+                            lambda_max_fixed_batch,
                             cfg.num_seeds,
-                            n_iters_max=cfg.kappa_logging.n_iters_max,
-                            n_iters_min=cfg.kappa_logging.n_iters_min,
-                            lambda_min_floor=cfg.kappa_logging.lambda_min_floor,
+                            n_iters_max=cfg.lambda_max_logging.n_iters_max,
                         )
                         xqc.logging.log_multiple_seeds_to_wandb(
-                            i * cfg.env.action_repeat, kappa_metrics
+                            i * cfg.env.action_repeat, metrics
                         )
 
-                        if cfg.kappa_control.enabled:
-                            mean_kappa = float(np.mean(np.array(kappa_metrics["kappa/kappa"])))
-                            if mean_kappa > cfg.kappa_control.kappa_high:
-                                current_utd = max(cfg.kappa_control.utd_min,
-                                                  current_utd - cfg.kappa_control.utd_step)
-                            elif mean_kappa < cfg.kappa_control.kappa_low:
-                                current_utd = min(cfg.kappa_control.utd_max,
-                                                  current_utd + cfg.kappa_control.utd_step)
+                        if cfg.lambda_max_control.enabled:
+                            mean_lambda_max = float(np.mean(np.array(metrics["lambda_max"])))
+                            if mean_lambda_max > cfg.lambda_max_control.lambda_max_high:
+                                current_utd = max(cfg.lambda_max_control.utd_min,
+                                                  current_utd - cfg.lambda_max_control.utd_step)
+                            elif mean_lambda_max < cfg.lambda_max_control.lambda_max_low:
+                                current_utd = min(cfg.lambda_max_control.utd_max,
+                                                  current_utd + cfg.lambda_max_control.utd_step)
                             xqc.logging.log_multiple_seeds_to_wandb(
                                 i * cfg.env.action_repeat,
                                 {"utd_ratio": np.array([current_utd] * cfg.num_seeds)},

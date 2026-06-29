@@ -59,30 +59,23 @@ def _spectral_shift_lambda_min(hvp_fn, flat_params, lambda_max, n_iters):
     return lambda_max - lam_shifted
 
 
-def compute_kappa_metrics(agent, fixed_batch, num_seeds, n_iters_max=3, n_iters_min=5,
-                          lambda_min_floor=1e-3):
-    """Online κ = |λ_max| / max(|λ_min|, lambda_min_floor) of the critic loss Hessian.
+def compute_lambda_max_metrics(agent, fixed_batch, num_seeds, n_iters_max=3):
+    """Online λ_max of the critic loss Hessian — direct proxy for gradient step safety.
+
+    High λ_max (steep curvature) → small safe learning rate → reduce UTD.
+    Low λ_max (gentle curvature) → large safe learning rate → increase UTD.
 
     Uses the active loss from agent.critic.loss_fn (follows critic_loss config —
     categorical CE when critic_loss=categorical, MSE when critic_loss=mse).
     Hessian is taken w.r.t. critic.params only, with batch_stats held fixed.
 
-    fixed_batch: sampled once and reused each call so κ is comparable across
+    fixed_batch: sampled once and reused each call so estimates are comparable across
     checkpoints. Expected shape (num_seeds, 1, batch_size, ...).
-
-    lambda_min_floor: absolute damping floor on |λ_min|. Neural-net Hessians are
-    indefinite with a near-zero smallest eigenvalue, so |λ_min| straddles 0 and the
-    raw ratio explodes. Clamping |λ_min| up to this floor means that when λ_min is in
-    the noise (the common case), κ ≈ |λ_max| / floor and therefore tracks λ_max —
-    which is where the XQC-vs-SAC conditioning signal actually lives. When |λ_min|
-    rises above the floor, κ is the true ratio. Use an ABSOLUTE floor (not relative
-    to λ_max), or κ saturates and the λ_max signal is lost. Tune to just above the
-    observed |λ_min| noise scale.
 
     Does NOT mutate agent state (no agent.rng touch, purely functional JAX).
     Returns dict with per-seed jnp arrays of shape (num_seeds,).
     """
-    kappas, lambdas_max, lambdas_min = [], [], []
+    lambdas_max = []
 
     for j in range(num_seeds):
         critic_j = _model_for_seed(j, agent.critic)
@@ -100,29 +93,19 @@ def compute_kappa_metrics(agent, fixed_batch, num_seeds, n_iters_max=3, n_iters_
 
         flat_params, unravel = ravel_pytree(critic_j.params)
         n_params = flat_params.shape[0]
-        assert n_params > 0, f"[kappa] seed {j}: critic has no parameters (n_params=0)"
+        assert n_params > 0, f"[lambda_max] seed {j}: critic has no parameters (n_params=0)"
 
         hvp_fn = _make_hvp_fn(loss_fn_fixed, flat_params, unravel)
 
         lam_max = _power_iter_lambda_max(hvp_fn, flat_params, n_iters_max)
-        lam_min = _spectral_shift_lambda_min(hvp_fn, flat_params, lam_max, n_iters_min)
-        kappa = jnp.abs(lam_max) / jnp.maximum(jnp.abs(lam_min), lambda_min_floor)
 
         assert jnp.isfinite(lam_max), (
-            f"[kappa] seed {j}: lambda_max={float(lam_max):.6g} is not finite — "
+            f"[lambda_max] seed {j}: lambda_max={float(lam_max):.6g} is not finite — "
             "check that the loss is well-defined on the fixed batch"
         )
-        assert jnp.isfinite(lam_min), (
-            f"[kappa] seed {j}: lambda_min={float(lam_min):.6g} is not finite — "
-            "spectral shift may have collapsed; try increasing n_iters_min"
-        )
 
-        kappas.append(float(kappa))
         lambdas_max.append(float(lam_max))
-        lambdas_min.append(float(lam_min))
 
     return {
-        "kappa/kappa":      jnp.array(kappas),
-        "kappa/lambda_max": jnp.array(lambdas_max),
-        "kappa/lambda_min": jnp.array(lambdas_min),
+        "lambda_max": jnp.array(lambdas_max),
     }
